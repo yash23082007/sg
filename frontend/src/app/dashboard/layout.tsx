@@ -1,3 +1,14 @@
+/**
+ * @file layout.tsx
+ * @description Cockpit Dashboard Layout with persistent left-sidebar navigation.
+ * 
+ * Layout Architecture:
+ * 1. Persistent 240px Sidebar: Unchanging navigation tree preventing DOM layout shifting.
+ * 2. Active Route Highlighting: Monitored via `usePathname()` hook with electric blue signal indicators.
+ * 3. User Profile Hook: Integrated at the bottom of the sidebar with candidate handle and target title.
+ * 4. Telemetry Header: Breadcrumb trail and live DAG Engine online status indicator.
+ */
+
 "use client";
 
 import Link from "next/link";
@@ -6,13 +17,13 @@ import {
   LayoutDashboard,
   FileCode2,
   GitFork,
-  Terminal,
   LogOut,
   ChevronRight,
-  Shield,
-  Layers,
+  Network,
+  TrendingUp,
 } from "lucide-react";
 
+/** Sidebar navigation configuration */
 const NAV_ITEMS = [
   {
     label: "THE COCKPIT",
@@ -32,6 +43,18 @@ const NAV_ITEMS = [
     icon: GitFork,
     badge: "9 STEPS",
   },
+  {
+    label: "DAG TECH TREE",
+    href: "/dashboard/skill-graph",
+    icon: Network,
+    badge: "MAP",
+  },
+  {
+    label: "MARKET VELOCITY",
+    href: "/dashboard/market-analysis",
+    icon: TrendingUp,
+    badge: "FEED",
+  },
 ];
 
 export default function DashboardLayout({
@@ -43,7 +66,7 @@ export default function DashboardLayout({
 
   return (
     <div className="flex h-screen bg-[#0a0a0a] text-neutral-200 overflow-hidden font-sans">
-      {/* Persistent Left Sidebar */}
+      {/* Persistent Left Sidebar Navigation */}
       <aside className="w-64 border-r border-white/10 flex flex-col justify-between bg-[#0d0d0d] select-none z-20 shrink-0">
         <div>
           {/* Brand header */}
@@ -59,7 +82,7 @@ export default function DashboardLayout({
             </span>
           </div>
 
-          {/* Target Role Indicator */}
+          {/* Target Architecture Specification */}
           <div className="p-4 border-b border-white/5 bg-white/[0.01]">
             <span className="font-mono text-[10px] text-neutral-500 uppercase block tracking-wider mb-1">
               TARGET ARCHITECTURE
@@ -69,7 +92,7 @@ export default function DashboardLayout({
             </p>
           </div>
 
-          {/* Navigation Links */}
+          {/* Navigation Items */}
           <nav className="p-3 space-y-1">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
@@ -113,7 +136,7 @@ export default function DashboardLayout({
           </nav>
         </div>
 
-        {/* User Profile Hook */}
+        {/* User Profile Hook (Bottom of Sidebar) */}
         <div className="border-t border-white/10 p-3 bg-[#0a0a0a]">
           <div className="flex items-center justify-between p-2 border border-white/5 bg-white/[0.01]">
             <div className="flex items-center gap-2.5 min-w-0">

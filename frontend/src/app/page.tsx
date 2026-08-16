@@ -1,14 +1,25 @@
+/**
+ * @file page.tsx
+ * @description SkillGap Landing Page.
+ * 
+ * Aesthetic Manifesto Features:
+ * 1. Monochromatic Dark Canvas: Deep slate with subtle mathematical 4rem grid background.
+ * 2. Kinetic Hero Typography: Giant oversized 'SKILLGAP' title with staggered hardware-accelerated fade-in-up animations.
+ * 3. Technical Cockpit Framing: Linear/Vercel inspired data cards detailing DAG topological sort, deterministic scoring, and execution roadmaps.
+ */
+
 import Link from "next/link";
 import { ArrowRight, Terminal, Cpu, Network, ShieldCheck, Activity } from "lucide-react";
 
 export default function LandingPage() {
   return (
     <div className="relative min-h-screen bg-[#0a0a0a] flex flex-col justify-between overflow-hidden">
-      {/* Subtle architectural background grid */}
+      {/* Architectural Background Grid Overlay */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_40%,#000_70%,transparent_100%)] pointer-events-none" />
 
-      {/* Top Bar */}
+      {/* Top Header Navigation */}
       <header className="relative z-10 w-full border-b border-white/10 px-6 py-4 flex items-center justify-between">
+        {/* Brand identity indicator */}
         <div className="flex items-center gap-3">
           <div className="w-2.5 h-2.5 bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
           <span className="font-mono text-sm font-bold tracking-widest text-white uppercase">
@@ -19,6 +30,7 @@ export default function LandingPage() {
           </span>
         </div>
 
+        {/* Live system status & enter CTA */}
         <nav className="flex items-center gap-6">
           <Link
             href="/dashboard"
@@ -35,8 +47,9 @@ export default function LandingPage() {
         </nav>
       </header>
 
-      {/* Hero Section */}
+      {/* Main Kinetic Hero */}
       <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 text-center max-w-5xl mx-auto py-20">
+        {/* Sub-header telemetry badge */}
         <div className="inline-flex items-center gap-2 px-3 py-1 border border-white/10 bg-white/[0.02] mb-8 animate-fade-in-up">
           <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
           <span className="font-mono text-xs text-neutral-400 tracking-wider">
@@ -44,16 +57,17 @@ export default function LandingPage() {
           </span>
         </div>
 
-        {/* Kinetic Hero Typography */}
+        {/* Kinetic Hero Headline */}
         <h1 className="text-6xl md:text-8xl lg:text-9xl font-black tracking-tighter text-white uppercase select-none leading-none animate-fade-in-up stagger-1">
           SKILL<span className="text-neutral-600">GAP</span>
         </h1>
 
+        {/* Sub-prose */}
         <p className="mt-6 text-base md:text-lg text-neutral-400 max-w-2xl font-sans font-light tracking-tight leading-relaxed animate-fade-in-up stagger-2">
           Career architecture computed as a deterministic data structure. Ingest your resume, evaluate against strict DAG skill trees, and execute linear progression paths.
         </p>
 
-        {/* CTA Matrix */}
+        {/* Dual CTA Controls */}
         <div className="mt-10 flex flex-col sm:flex-row items-center gap-4 animate-fade-in-up stagger-3">
           <Link
             href="/dashboard"
@@ -69,7 +83,7 @@ export default function LandingPage() {
           </Link>
         </div>
 
-        {/* Technical Capabilities Grid */}
+        {/* Technical Features 3-Column Grid */}
         <div className="mt-20 w-full grid grid-cols-1 md:grid-cols-3 border border-white/10 bg-black/40 text-left animate-fade-in-up stagger-4">
           <div className="p-6 border-b md:border-b-0 md:border-r border-white/10">
             <div className="flex items-center gap-2 mb-3">
@@ -109,7 +123,7 @@ export default function LandingPage() {
         </div>
       </main>
 
-      {/* Footer */}
+      {/* Footer Telemetry */}
       <footer className="relative z-10 w-full border-t border-white/10 px-6 py-4 flex flex-col sm:flex-row items-center justify-between text-neutral-500 font-mono text-xs gap-2">
         <span>ARCHITECTED WITH NEXT.JS 15 • TAILWIND V4 • FASTAPI</span>
         <span>LATENCY: 12ms // BUFFER: ALLOCATED</span>

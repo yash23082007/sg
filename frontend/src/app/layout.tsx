@@ -1,7 +1,18 @@
+/**
+ * @file layout.tsx
+ * @description Next.js 15 App Router root layout.
+ * 
+ * Typography & Aesthetic Setup:
+ * 1. Variable Sans-Serif: Injects Google 'Inter' for prose and structural labels.
+ * 2. Monospace: Injects Google 'JetBrains Mono' for all telemetry, numbers, code, and badges.
+ * 3. Base Dark Canvas: Enforces `bg-[#0a0a0a]` with neutral-200 text and electric blue selection.
+ */
+
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
+// Google Fonts variable configuration
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-sans",
@@ -14,6 +25,7 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+// Search Engine & Metadata Optimization
 export const metadata: Metadata = {
   title: "SkillGap // Autonomous Career Architecture Engine",
   description:

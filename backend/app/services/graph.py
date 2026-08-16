@@ -1,275 +1,299 @@
-from typing import List, Dict, Any
+"""
+SkillGap Graph DAG & Recommendation Service
+Executes topological sort (Kahn's algorithm), cycle detection, prerequisite gate verification,
+and deterministic priority score calculations over live SQLAlchemy database records.
+"""
+
+from typing import List, Dict, Set, Tuple, Optional
+from collections import deque, defaultdict
 from sqlalchemy.orm import Session
+from fastapi import HTTPException, status
+
+from app.models.domain import Skill, SkillEdge, UserSkillProficiency, User
 from app.schemas.payload import DashboardResponse, SkillGapItem, RoadmapStepResponse
+from app.core.config import settings
 
 
 class GraphService:
+    """Directed Acyclic Graph (DAG) computational service for career architecture."""
+
     @staticmethod
     def calculate_priority_score(
         demand: float,
-        gap: int,
+        gap: float,
         centrality: float,
         readiness_gate: bool,
-        wd: float = 0.5,
-        wg: float = 0.3,
-        wv: float = 0.2,
+        wd: float = settings.WEIGHT_DEMAND,
+        wg: float = settings.WEIGHT_GAP,
+        wv: float = settings.WEIGHT_VALUE,
     ) -> float:
         """
         Calculates the Priority Score P:
-        P = ((D * Wd) + (G/100 * Wg) + (V * Wv)) * R
+        P = ((D * Wd) + (G * Wg) + (V * Wv)) * R
+        
+        Where:
+        - D (Demand): Normalized market demand frequency (0.0 - 1.0)
+        - G (Gap): Normalized required proficiency minus current proficiency (0.0 - 1.0)
+        - V (Value): Centrality / transitive descendant ratio (0.0 - 1.0)
+        - R (Readiness): Strict Boolean gate (1.0 if all prerequisites cleared, 0.0 otherwise)
         """
         if not readiness_gate:
             return 0.0
 
-        normalized_gap = max(0.0, gap / 100.0)
-        score = (demand * wd) + (normalized_gap * wg) + (centrality * wv)
+        clamped_gap = max(0.0, min(1.0, gap))
+        score = (demand * wd) + (clamped_gap * wg) + (centrality * wv)
         return round(min(1.0, max(0.0, score)), 2)
 
-    @staticmethod
-    def get_dashboard_analysis(user_id: str, db: Session) -> DashboardResponse:
+    @classmethod
+    def assert_acyclic(cls, db: Session, proposed_prereq_id: str, proposed_dep_id: str) -> None:
         """
-        Computes dashboard gap analysis by comparing user proficiencies with DAG requirements.
+        Runs Kahn's algorithm cycle detection on the graph with the proposed edge included.
+        Raises HTTP 409 Conflict if adding the edge would introduce a directed cycle.
         """
-        # Production data fallback / computable calculation
-        skill_gaps: List[SkillGapItem] = [
-            SkillGapItem(
-                skill_id="s-001",
-                skill_name="Python",
-                category="language",
-                current_proficiency=88,
-                required_proficiency=90,
-                gap=2,
-                priority_score=0.12,
-                status="mastered",
-            ),
-            SkillGapItem(
-                skill_id="s-002",
-                skill_name="TypeScript",
-                category="language",
-                current_proficiency=82,
-                required_proficiency=85,
-                gap=3,
-                priority_score=0.18,
-                status="mastered",
-            ),
-            SkillGapItem(
-                skill_id="s-003",
-                skill_name="Next.js",
-                category="framework",
-                current_proficiency=72,
-                required_proficiency=85,
-                gap=13,
-                priority_score=0.64,
-                status="developing",
-            ),
-            SkillGapItem(
-                skill_id="s-004",
-                skill_name="FastAPI",
-                category="framework",
-                current_proficiency=65,
-                required_proficiency=80,
-                gap=15,
-                priority_score=0.58,
-                status="developing",
-            ),
-            SkillGapItem(
-                skill_id="s-005",
-                skill_name="PostgreSQL",
-                category="database",
-                current_proficiency=55,
-                required_proficiency=75,
-                gap=20,
-                priority_score=0.72,
-                status="developing",
-            ),
-            SkillGapItem(
-                skill_id="s-006",
-                skill_name="Docker",
-                category="devops",
-                current_proficiency=30,
-                required_proficiency=70,
-                gap=40,
-                priority_score=0.85,
-                status="critical",
-            ),
-            SkillGapItem(
-                skill_id="s-007",
-                skill_name="Kubernetes",
-                category="devops",
-                current_proficiency=10,
-                required_proficiency=60,
-                gap=50,
-                priority_score=0.91,
-                status="critical",
-            ),
-            SkillGapItem(
-                skill_id="s-008",
-                skill_name="LangChain",
-                category="ai_ml",
-                current_proficiency=20,
-                required_proficiency=75,
-                gap=55,
-                priority_score=0.95,
-                status="critical",
-            ),
-            SkillGapItem(
-                skill_id="s-009",
-                skill_name="Vector DBs",
-                category="ai_ml",
-                current_proficiency=15,
-                required_proficiency=65,
-                gap=50,
-                priority_score=0.88,
-                status="critical",
-            ),
-            SkillGapItem(
-                skill_id="s-010",
-                skill_name="System Design",
-                category="architecture",
-                current_proficiency=45,
-                required_proficiency=80,
-                gap=35,
-                priority_score=0.78,
-                status="critical",
-            ),
-            SkillGapItem(
-                skill_id="s-011",
-                skill_name="CI/CD Pipelines",
-                category="devops",
-                current_proficiency=50,
-                required_proficiency=70,
-                gap=20,
-                priority_score=0.62,
-                status="developing",
-            ),
-            SkillGapItem(
-                skill_id="s-012",
-                skill_name="GraphQL",
-                category="framework",
-                current_proficiency=78,
-                required_proficiency=70,
-                gap=-8,
-                priority_score=0.05,
-                status="mastered",
-            ),
-        ]
+        if proposed_prereq_id == proposed_dep_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cycle detected: Self-referential prerequisite loops are forbidden."
+            )
 
-        mastered = sum(1 for g in skill_gaps if g.status == "mastered")
-        critical = sum(1 for g in skill_gaps if g.status == "critical")
-        avg_prof = sum(g.current_proficiency for g in skill_gaps) // len(skill_gaps)
+        edges = db.query(SkillEdge).all()
+        skills = db.query(Skill).all()
+
+        adj: Dict[str, Set[str]] = {s.id: set() for s in skills}
+        in_degree: Dict[str, int] = {s.id: 0 for s in skills}
+
+        # Build existing graph
+        for e in edges:
+            if e.prerequisite_id in adj and e.dependent_id in adj:
+                adj[e.prerequisite_id].add(e.dependent_id)
+                in_degree[e.dependent_id] += 1
+
+        # Add proposed edge
+        if proposed_prereq_id in adj and proposed_dep_id in adj:
+            if proposed_dep_id not in adj[proposed_prereq_id]:
+                adj[proposed_prereq_id].add(proposed_dep_id)
+                in_degree[proposed_dep_id] += 1
+
+        # Kahn's Algorithm
+        queue = deque([node_id for node_id, deg in in_degree.items() if deg == 0])
+        visited_count = 0
+
+        while queue:
+            curr = queue.popleft()
+            visited_count += 1
+            for neighbor in adj[curr]:
+                in_degree[neighbor] -= 1
+                if in_degree[neighbor] == 0:
+                    queue.append(neighbor)
+
+        if visited_count < len(skills):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cycle detected: Inserting this prerequisite edge creates an illegal circular dependency in the DAG."
+            )
+
+    @classmethod
+    def compute_centrality_for_all_skills(cls, db: Session) -> None:
+        """
+        Computes the normalized transitive descendant count (V) for all skills and updates the database.
+        """
+        skills = db.query(Skill).all()
+        edges = db.query(SkillEdge).all()
+
+        adj: Dict[str, Set[str]] = {s.id: set() for s in skills}
+        for e in edges:
+            if e.prerequisite_id in adj:
+                adj[e.prerequisite_id].add(e.dependent_id)
+
+        max_possible = max(1, len(skills) - 1)
+        for s in skills:
+            visited = set()
+            stack = list(adj[s.id])
+            while stack:
+                curr = stack.pop()
+                if curr not in visited:
+                    visited.add(curr)
+                    stack.extend(adj.get(curr, set()))
+            s.centrality = round(len(visited) / max_possible, 3)
+
+        db.commit()
+
+    @classmethod
+    def get_dashboard_analysis(cls, user_id: str, db: Session) -> DashboardResponse:
+        """
+        Live computation of candidate skill gap matrix, prerequisite gates, and overall readiness.
+        Queries live database rows for skills, prerequisite edges, and user proficiencies.
+        """
+        # Fetch all skills and prerequisite edges
+        skills = db.query(Skill).all()
+        if not skills:
+            from app.core.seed import seed_database
+            seed_database(db)
+            skills = db.query(Skill).all()
+
+        edges = db.query(SkillEdge).all()
+        user_profs = db.query(UserSkillProficiency).filter(UserSkillProficiency.user_id == user_id).all()
+        prof_map: Dict[str, float] = {p.skill_id: p.proficiency for p in user_profs}
+
+        # Build prerequisite mapping: dependent_id -> list of prerequisite Skills
+        skill_by_id: Dict[str, Skill] = {s.id: s for s in skills}
+        prereqs_by_dep: Dict[str, List[Skill]] = defaultdict(list)
+        for e in edges:
+            if e.prerequisite_id in skill_by_id:
+                prereqs_by_dep[e.dependent_id].append(skill_by_id[e.prerequisite_id])
+
+        gap_items: List[SkillGapItem] = []
+        mastered_count = 0
+        critical_count = 0
+        total_curr_prof = 0.0
+
+        for skill in skills:
+            curr_prof = prof_map.get(skill.id, 0.0)
+            req_prof = skill.required_proficiency
+            total_curr_prof += curr_prof
+
+            # Evaluate Prerequisite Gate (R)
+            # R = 1 iff all upstream prerequisites have proficiency >= PREREQUISITE_PASS_THRESHOLD
+            unmet_prereqs = []
+            readiness_gate = True
+            for prereq in prereqs_by_dep.get(skill.id, []):
+                prereq_prof = prof_map.get(prereq.id, 0.0)
+                if prereq_prof < settings.PREREQUISITE_PASS_THRESHOLD:
+                    readiness_gate = False
+                    unmet_prereqs.append(prereq.name)
+
+            # Mathematical gap delta (0.0 to 1.0)
+            raw_gap = max(0.0, req_prof - curr_prof)
+            gap_pct = int(round((req_prof - curr_prof) * 100))
+
+            # Deterministic priority score P
+            priority_score = cls.calculate_priority_score(
+                demand=skill.demand_score,
+                gap=raw_gap,
+                centrality=skill.centrality,
+                readiness_gate=readiness_gate,
+            )
+
+            # Determine status label
+            if curr_prof >= 0.80:
+                status_label = "mastered"
+                mastered_count += 1
+            elif curr_prof >= 0.60:
+                status_label = "proficient"
+            elif curr_prof >= 0.40:
+                status_label = "developing"
+            else:
+                status_label = "critical"
+                if gap_pct > 30:
+                    critical_count += 1
+
+            gap_items.append(SkillGapItem(
+                skill_id=skill.id,
+                skill_name=skill.name,
+                category=skill.category,
+                current_proficiency=int(round(curr_prof * 100)),
+                required_proficiency=int(round(req_prof * 100)),
+                gap=gap_pct,
+                priority_score=priority_score,
+                status=status_label,
+                readiness_gate=readiness_gate,
+                unmet_prerequisites=unmet_prereqs,
+            ))
+
+        # Sort skill gaps by Priority Score descending (highest actionable leverage first)
+        # For items with equal P (e.g. 0.0 gated items), sort by demand and gap
+        gap_items.sort(key=lambda item: (item.priority_score, item.gap), reverse=True)
+
+        avg_prof = int(round((total_curr_prof / max(1, len(skills))) * 100))
+        
+        # Overall readiness weighted by target role required benchmarks
+        total_req = sum(s.required_proficiency for s in skills)
+        overall_readiness = int(round((total_curr_prof / max(0.01, total_req)) * 100))
+        overall_readiness = min(100, max(0, overall_readiness))
 
         return DashboardResponse(
-            overall_readiness=54,
-            total_skills=len(skill_gaps),
-            mastered_count=mastered,
-            critical_count=critical,
+            overall_readiness=overall_readiness,
+            total_skills=len(skills),
+            mastered_count=mastered_count,
+            critical_count=critical_count,
             average_proficiency=avg_prof,
-            skill_gaps=skill_gaps,
+            skill_gaps=gap_items,
+            telemetry_source="live_dag_engine",
         )
 
-    @staticmethod
-    def get_roadmap(user_id: str, db: Session) -> List[RoadmapStepResponse]:
+    @classmethod
+    def get_roadmap(cls, user_id: str, db: Session) -> List[RoadmapStepResponse]:
         """
-        Returns topologically sorted learning steps based on DAG prerequisites.
+        Generates a topological roadmap via Kahn's algorithm, ordering unmastered skills
+        strictly according to prerequisite depth and Priority Score leverage.
         """
-        return [
-            RoadmapStepResponse(
-                id="r-001",
-                order=1,
-                skill_name="Python Fundamentals",
-                skill_id="s-001",
-                category="language",
-                description="Solidify advanced Python patterns: generators, decorators, async/await, and type hints.",
-                estimated_hours=8,
-                prerequisites=[],
-                status="completed",
-            ),
-            RoadmapStepResponse(
-                id="r-002",
-                order=2,
-                skill_name="FastAPI Deep Dive",
-                skill_id="s-004",
-                category="framework",
-                description="Build production APIs with dependency injection, middleware, background tasks, and WebSockets.",
-                estimated_hours=20,
-                prerequisites=["Python Fundamentals"],
-                status="completed",
-            ),
-            RoadmapStepResponse(
-                id="r-003",
-                order=3,
-                skill_name="PostgreSQL & SQLAlchemy",
-                skill_id="s-005",
-                category="database",
-                description="Master relational modeling, complex queries, indexing strategies, and ORM patterns with SQLAlchemy 2.0.",
-                estimated_hours=24,
-                prerequisites=["Python Fundamentals"],
-                status="current",
-            ),
-            RoadmapStepResponse(
-                id="r-004",
-                order=4,
-                skill_name="Docker Containerization",
-                skill_id="s-006",
-                category="devops",
-                description="Containerize applications with multi-stage Dockerfiles, compose stacks, and networking fundamentals.",
-                estimated_hours=16,
-                prerequisites=["FastAPI Deep Dive", "PostgreSQL & SQLAlchemy"],
-                status="locked",
-            ),
-            RoadmapStepResponse(
-                id="r-005",
-                order=5,
-                skill_name="System Design Patterns",
-                skill_id="s-010",
-                category="architecture",
-                description="Study distributed systems: load balancing, caching (Redis), message queues, and CAP theorem trade-offs.",
-                estimated_hours=30,
-                prerequisites=["Docker Containerization"],
-                status="locked",
-            ),
-            RoadmapStepResponse(
-                id="r-006",
-                order=6,
-                skill_name="CI/CD Pipelines",
-                skill_id="s-011",
-                category="devops",
-                description="Automate testing and deployments with GitHub Actions, artifact registries, and blue-green deploy strategies.",
-                estimated_hours=12,
-                prerequisites=["Docker Containerization"],
-                status="locked",
-            ),
-            RoadmapStepResponse(
-                id="r-007",
-                order=7,
-                skill_name="Kubernetes Orchestration",
-                skill_id="s-007",
-                category="devops",
-                description="Deploy and scale containerized workloads: pods, services, ingress, Helm charts, and resource limits.",
-                estimated_hours=32,
-                prerequisites=["Docker Containerization", "CI/CD Pipelines"],
-                status="locked",
-            ),
-            RoadmapStepResponse(
-                id="r-008",
-                order=8,
-                skill_name="LangChain & LLM Engineering",
-                skill_id="s-008",
-                category="ai_ml",
-                description="Build RAG pipelines, agent architectures, tool-calling patterns, and prompt engineering with LangChain.",
-                estimated_hours=40,
-                prerequisites=["Python Fundamentals", "System Design Patterns"],
-                status="locked",
-            ),
-            RoadmapStepResponse(
-                id="r-009",
-                order=9,
-                skill_name="Vector Databases",
-                skill_id="s-009",
-                category="ai_ml",
-                description="Implement semantic search with Pinecone/Chroma: embedding pipelines, indexing strategies, and hybrid search.",
-                estimated_hours=18,
-                prerequisites=["LangChain & LLM Engineering"],
-                status="locked",
-            ),
-        ]
+        skills = db.query(Skill).all()
+        if not skills:
+            from app.core.seed import seed_database
+            seed_database(db)
+            skills = db.query(Skill).all()
+
+        edges = db.query(SkillEdge).all()
+        user_profs = db.query(UserSkillProficiency).filter(UserSkillProficiency.user_id == user_id).all()
+        prof_map: Dict[str, float] = {p.skill_id: p.proficiency for p in user_profs}
+        skill_by_id: Dict[str, Skill] = {s.id: s for s in skills}
+
+        # Build graph structures
+        adj: Dict[str, Set[str]] = {s.id: set() for s in skills}
+        in_degree: Dict[str, int] = {s.id: 0 for s in skills}
+        prereqs_names_by_dep: Dict[str, List[str]] = defaultdict(list)
+
+        for e in edges:
+            if e.prerequisite_id in adj and e.dependent_id in adj:
+                adj[e.prerequisite_id].add(e.dependent_id)
+                in_degree[e.dependent_id] += 1
+                prereqs_names_by_dep[e.dependent_id].append(skill_by_id[e.prerequisite_id].name)
+
+        # Kahn's Algorithm topological ordering
+        queue = deque([node_id for node_id, deg in in_degree.items() if deg == 0])
+        topo_order: List[str] = []
+
+        while queue:
+            curr = queue.popleft()
+            topo_order.append(curr)
+            for neighbor in sorted(adj[curr], key=lambda nid: skill_by_id[nid].demand_score, reverse=True):
+                in_degree[neighbor] -= 1
+                if in_degree[neighbor] == 0:
+                    queue.append(neighbor)
+
+        # Build Roadmap Steps from Topological Ordering
+        steps: List[RoadmapStepResponse] = []
+        step_index = 1
+
+        for skill_id in topo_order:
+            skill = skill_by_id[skill_id]
+            curr_prof = prof_map.get(skill.id, 0.0)
+
+            # Determine stage status
+            if curr_prof >= 0.80:
+                step_status = "completed"
+            elif curr_prof >= 0.50:
+                step_status = "current"
+            else:
+                # Check if all prerequisites are completed
+                all_prereqs_cleared = True
+                for prereq_edge in skill.prerequisites:
+                    if prof_map.get(prereq_edge.prerequisite_id, 0.0) < settings.PREREQUISITE_PASS_THRESHOLD:
+                        all_prereqs_cleared = False
+                        break
+                step_status = "current" if all_prereqs_cleared else "locked"
+
+            steps.append(RoadmapStepResponse(
+                id=f"step-{skill.normalized_key}",
+                order=step_index,
+                skill_name=skill.name,
+                skill_id=skill.id,
+                category=skill.category,
+                description=skill.description or f"Master foundational and advanced {skill.name} architecture.",
+                estimated_hours=int(skill.estimated_hours),
+                prerequisites=prereqs_names_by_dep.get(skill.id, []),
+                status=step_status,
+            ))
+            step_index += 1
+
+        return steps

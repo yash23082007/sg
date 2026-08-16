@@ -1,3 +1,14 @@
+/**
+ * @file page.tsx
+ * @description The Cockpit — Central telemetry hub and skill gap evaluation dashboard.
+ * 
+ * Aesthetic & Functional Elements:
+ * 1. KPI Telemetry Row: Oversized 54% readiness score, Mastered node count, Critical gap count, and Average score.
+ * 2. High-Density Core Skill Gap Matrix: Monospace data table with category badges, custom progress bars,
+ *    gap deltas, and computed priority scores [P].
+ * 3. Color Logic: Dopamine utility accents (Green for mastered, Rose for critical bottlenecks).
+ */
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -12,7 +23,6 @@ import {
   BarChart3,
   Layers,
   ArrowUpRight,
-  RefreshCw,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -20,6 +30,7 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Ingest telemetry payload from API on mount
   useEffect(() => {
     fetchDashboard().then((res) => {
       setData(res);
