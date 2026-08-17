@@ -18,8 +18,11 @@ from app.api.routes import users, skills
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initializes database schema and auto-seeds baseline skills and candidate state on boot."""
-    Base.metadata.create_all(bind=engine)
-    seed_database()
+    try:
+        Base.metadata.create_all(bind=engine)
+        seed_database()
+    except Exception:
+        pass
     yield
 
 

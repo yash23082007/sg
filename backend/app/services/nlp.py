@@ -173,21 +173,34 @@ class NLPService:
                 pass
 
         # 3. PDF parsing
-        try:
-            text_chunks = []
-            # Extract printable ASCII / UTF-8 text streams from PDF stream blocks
-            raw_text = file_bytes.decode("latin-1", errors="ignore")
-            stream_matches = re.findall(r"stream[\r\n]+(.*?)[\r\n]+endstream", raw_text, re.DOTALL)
-            for s in stream_matches:
-                # Filter printable readable strings
-                cleaned = re.sub(r"[^\x20-\x7E\n\r\t]", " ", s)
-                if len(cleaned.strip()) > 10:
-                    text_chunks.append(cleaned)
-            
-            if text_chunks:
-                return " ".join(text_chunks)
-        except Exception:
-            pass
+        if name_lower.endswith(".pdf"):
+            try:
+                from pypdf import PdfReader
+                reader = PdfReader(io.BytesIO(file_bytes))
+                page_texts = []
+                for p in reader.pages:
+                    txt = p.extract_text()
+                    if txt:
+                        page_texts.append(txt)
+                combined = "\n".join(page_texts).strip()
+                if combined:
+                    return combined
+            except Exception:
+                pass
+
+            # Fallback for uncompressed or raw streams
+            try:
+                text_chunks = []
+                raw_text = file_bytes.decode("latin-1", errors="ignore")
+                stream_matches = re.findall(r"stream[\r\n]+(.*?)[\r\n]+endstream", raw_text, re.DOTALL)
+                for s in stream_matches:
+                    cleaned = re.sub(r"[^\x20-\x7E\n\r\t]", " ", s)
+                    if len(cleaned.strip()) > 10:
+                        text_chunks.append(cleaned)
+                if text_chunks:
+                    return " ".join(text_chunks)
+            except Exception:
+                pass
 
         # Fallback raw decoding
         return file_bytes.decode("utf-8", errors="ignore")
@@ -202,8 +215,12 @@ class NLPService:
     ) -> ResumeUploadResponse:
         """
         Parses resume bytes, matches against alias lexicon, infers proficiency,
-        and updates the user's proficiency records in PostgreSQL/SQLite.
+        computes newly unlocked DAG skills, and updates the user's records.
         """
+        # Baseline snapshot before applying resume updates
+        dash_before = GraphService.get_dashboard_analysis(user_id=user_id, db=db)
+        before_locked = {i.skill_name for i in dash_before.skill_gaps if not i.readiness_gate}
+
         raw_text = cls.extract_text_from_payload(file_bytes, filename)
         text_lower = raw_text.lower()
 
@@ -232,12 +249,16 @@ class NLPService:
                 if normalized_key not in matched_keys or inferred > matched_keys[normalized_key]:
                     matched_keys[normalized_key] = inferred
 
-        # If sparse or binary parsing yield was small, ensure core baseline tokens if present
+        # If no skills matched at all, signal non-success
         if not matched_keys:
-            # Fallback common match check on text stream
-            for word in ["python", "docker", "kubernetes", "react", "fastapi", "sql", "linux"]:
-                if word in text_lower:
-                    matched_keys[word] = 0.70
+            return ResumeUploadResponse(
+                success=False,
+                extracted_skills=[],
+                matched_count=0,
+                message=f"No recognized technical skills found in '{filename}'. Please ensure the document contains legible text.",
+                updated_readiness=dash_before.overall_readiness,
+                unlocked_skills=[],
+            )
 
         # 2. Persist proficiencies to database for this user
         all_skills = db.query(Skill).all()
@@ -273,13 +294,16 @@ class NLPService:
 
         db.commit()
 
-        # 3. Compute new aggregate readiness score
-        dashboard = GraphService.get_dashboard_analysis(user_id=user_id, db=db)
+        # 3. Compute new aggregate readiness score and newly unlocked prerequisites
+        dash_after = GraphService.get_dashboard_analysis(user_id=user_id, db=db)
+        after_locked = {i.skill_name for i in dash_after.skill_gaps if not i.readiness_gate}
+        unlocked_skills = sorted(list(before_locked - after_locked))
 
         return ResumeUploadResponse(
             success=True,
             extracted_skills=sorted(list(set(extracted_display_names))),
             matched_count=len(extracted_display_names),
             message=f"Resume '{filename}' parsed successfully. {len(extracted_display_names)} DAG skill tokens normalized.",
-            updated_readiness=dashboard.overall_readiness,
+            updated_readiness=dash_after.overall_readiness,
+            unlocked_skills=unlocked_skills,
         )

@@ -109,6 +109,37 @@ class RoadmapStepResponse(BaseModel):
     status: str  # completed, current, locked
 
 
+class SkillGraphNode(BaseModel):
+    id: str
+    name: str
+    normalized_key: str
+    category: str
+    level: int  # 0 - 100 current verified proficiency
+    required_level: int  # 0 - 100 target role benchmark
+    status: str  # "mastered" | "current" | "locked"
+    demand_score: float
+    centrality: float
+    readiness_gate: bool
+    unlocked_by: List[str] = Field(default_factory=list)
+    unlocks: List[str] = Field(default_factory=list)
+    topological_depth: int = 0
+
+
+class SkillGraphEdge(BaseModel):
+    source: str
+    target: str
+    source_name: str
+    target_name: str
+
+
+class SkillGraphResponse(BaseModel):
+    nodes: List[SkillGraphNode]
+    edges: List[SkillGraphEdge]
+    total_nodes: int
+    total_edges: int
+    telemetry_source: str = "live_dag_engine"
+
+
 # ============================================================================
 # NLP Ingestion Schemas
 # ============================================================================

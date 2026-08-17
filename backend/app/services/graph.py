@@ -10,7 +10,14 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
 from app.models.domain import Skill, SkillEdge, UserSkillProficiency, User
-from app.schemas.payload import DashboardResponse, SkillGapItem, RoadmapStepResponse
+from app.schemas.payload import (
+    DashboardResponse,
+    SkillGapItem,
+    RoadmapStepResponse,
+    SkillGraphResponse,
+    SkillGraphNode,
+    SkillGraphEdge,
+)
 from app.core.config import settings
 
 
@@ -297,3 +304,103 @@ class GraphService:
             step_index += 1
 
         return steps
+
+    @classmethod
+    def get_graph_topology(cls, user_id: str, db: Session) -> SkillGraphResponse:
+        """
+        Builds complete DAG topology for visualization: all nodes with verified proficiency,
+        status, upstream prerequisites, downstream unlocks, topological depth, and directed edges.
+        """
+        skills = db.query(Skill).all()
+        if not skills:
+            from app.core.seed import seed_database
+            seed_database(db)
+            skills = db.query(Skill).all()
+
+        edges = db.query(SkillEdge).all()
+        user_profs = db.query(UserSkillProficiency).filter(UserSkillProficiency.user_id == user_id).all()
+        prof_map: Dict[str, float] = {p.skill_id: p.proficiency for p in user_profs}
+        skill_by_id: Dict[str, Skill] = {s.id: s for s in skills}
+
+        # Build adjacency maps
+        adj_downstream: Dict[str, List[Skill]] = defaultdict(list)
+        adj_upstream: Dict[str, List[Skill]] = defaultdict(list)
+        in_degree: Dict[str, int] = {s.id: 0 for s in skills}
+
+        for e in edges:
+            if e.prerequisite_id in skill_by_id and e.dependent_id in skill_by_id:
+                adj_downstream[e.prerequisite_id].append(skill_by_id[e.dependent_id])
+                adj_upstream[e.dependent_id].append(skill_by_id[e.prerequisite_id])
+                in_degree[e.dependent_id] += 1
+
+        # Compute topological depth (longest path from root nodes)
+        queue = deque([s.id for s in skills if in_degree[s.id] == 0])
+        depth_map: Dict[str, int] = {s.id: 0 for s in skills if in_degree[s.id] == 0}
+        temp_in_degree = in_degree.copy()
+
+        while queue:
+            curr_id = queue.popleft()
+            curr_depth = depth_map.get(curr_id, 0)
+            for child in adj_downstream.get(curr_id, []):
+                depth_map[child.id] = max(depth_map.get(child.id, 0), curr_depth + 1)
+                temp_in_degree[child.id] -= 1
+                if temp_in_degree[child.id] == 0:
+                    queue.append(child.id)
+
+        nodes: List[SkillGraphNode] = []
+        for s in skills:
+            curr_prof = prof_map.get(s.id, 0.0)
+            req_prof = s.required_proficiency
+
+            # Evaluate Prerequisite Gate
+            readiness_gate = True
+            unlocked_by_names = []
+            for prereq in adj_upstream.get(s.id, []):
+                unlocked_by_names.append(prereq.name)
+                if prof_map.get(prereq.id, 0.0) < settings.PREREQUISITE_PASS_THRESHOLD:
+                    readiness_gate = False
+
+            unlocks_names = [dep.name for dep in adj_downstream.get(s.id, [])]
+
+            if curr_prof >= 0.80:
+                node_status = "mastered"
+            elif readiness_gate:
+                node_status = "current"
+            else:
+                node_status = "locked"
+
+            nodes.append(SkillGraphNode(
+                id=s.normalized_key,
+                name=s.name,
+                normalized_key=s.normalized_key,
+                category=s.category,
+                level=int(round(curr_prof * 100)),
+                required_level=int(round(req_prof * 100)),
+                status=node_status,
+                demand_score=s.demand_score,
+                centrality=s.centrality,
+                readiness_gate=readiness_gate,
+                unlocked_by=unlocked_by_names,
+                unlocks=unlocks_names,
+                topological_depth=depth_map.get(s.id, 0),
+            ))
+
+        graph_edges: List[SkillGraphEdge] = []
+        for e in edges:
+            if e.prerequisite_id in skill_by_id and e.dependent_id in skill_by_id:
+                p = skill_by_id[e.prerequisite_id]
+                d = skill_by_id[e.dependent_id]
+                graph_edges.append(SkillGraphEdge(
+                    source=p.normalized_key,
+                    target=d.normalized_key,
+                    source_name=p.name,
+                    target_name=d.name,
+                ))
+
+        return SkillGraphResponse(
+            nodes=nodes,
+            edges=graph_edges,
+            total_nodes=len(nodes),
+            total_edges=len(graph_edges),
+            telemetry_source="live_dag_engine",
+        )

@@ -16,6 +16,7 @@ from app.schemas.payload import (
     SkillItem,
     SkillEdgeCreate,
     SkillEdgeResponse,
+    SkillGraphResponse,
 )
 from app.services.graph import GraphService
 
@@ -54,6 +55,18 @@ def get_execution_roadmap(
     Returns the topologically sorted prerequisite-resolved roadmap via Kahn's algorithm.
     """
     return GraphService.get_roadmap(user_id=user_id, db=db)
+
+
+@router.get("/graph", response_model=SkillGraphResponse)
+def get_skill_graph(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns full DAG graph topology with nodes, directed edges, verified candidate levels,
+    prerequisite locks, and topological depth for layout rendering.
+    """
+    return GraphService.get_graph_topology(user_id=user_id, db=db)
 
 
 @router.post("/edges", response_model=SkillEdgeResponse, status_code=status.HTTP_201_CREATED)

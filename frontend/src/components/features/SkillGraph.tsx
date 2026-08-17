@@ -16,7 +16,9 @@ export interface SkillNode {
   level: number;
   status: "mastered" | "current" | "locked";
   unlockedBy?: string[];
+  unlocked_by?: string[];
   unlocks: string[];
+  topological_depth?: number;
 }
 
 interface SkillGraphProps {
@@ -25,24 +27,37 @@ interface SkillGraphProps {
 }
 
 const DEFAULT_NODES: SkillNode[] = [
-  { id: "python", name: "Python Core", category: "Language", level: 90, status: "mastered", unlocks: ["fastapi", "ml_foundations"] },
-  { id: "typescript", name: "TypeScript", category: "Language", level: 85, status: "mastered", unlocks: ["nextjs"] },
-  { id: "fastapi", name: "FastAPI", category: "Framework", level: 65, status: "mastered", unlockedBy: ["python"], unlocks: ["docker", "microservices"] },
-  { id: "nextjs", name: "Next.js App Router", category: "Framework", level: 75, status: "mastered", unlockedBy: ["typescript"], unlocks: ["fullstack_systems"] },
-  { id: "postgres", name: "PostgreSQL & SQLAlchemy", category: "Database", level: 55, status: "current", unlockedBy: ["python"], unlocks: ["distributed_data"] },
-  { id: "docker", name: "Docker Containerization", category: "DevOps", level: 30, status: "locked", unlockedBy: ["fastapi"], unlocks: ["k8s", "cicd"] },
-  { id: "k8s", name: "Kubernetes Orchestration", category: "DevOps", level: 10, status: "locked", unlockedBy: ["docker"], unlocks: ["cloud_native"] },
-  { id: "langchain", name: "LangChain / LLMs", category: "AI / ML", level: 20, status: "locked", unlockedBy: ["python"], unlocks: ["autonomous_agents"] },
-  { id: "vectordb", name: "Vector Databases (RAG)", category: "AI / ML", level: 15, status: "locked", unlockedBy: ["langchain"], unlocks: ["hybrid_retrieval"] },
+  { id: "python", name: "Python", category: "Language", level: 88, status: "mastered", unlocks: ["FastAPI", "SQLAlchemy & ORM", "Machine Learning Foundations"] },
+  { id: "typescript", name: "TypeScript", category: "Language", level: 82, status: "mastered", unlocks: ["React", "Next.js"] },
+  { id: "linux", name: "Linux & Bash", category: "Tooling", level: 85, status: "mastered", unlocks: ["Docker"] },
+  { id: "git", name: "Git Architecture", category: "Tooling", level: 80, status: "mastered", unlocks: ["CI/CD Pipelines"] },
+  { id: "sql", name: "SQL & Relational Theory", category: "Database", level: 75, status: "current", unlocks: ["PostgreSQL Internals", "SQLAlchemy & ORM"] },
+  { id: "fastapi", name: "FastAPI", category: "Framework", level: 65, status: "current", unlockedBy: ["Python"], unlocks: ["Docker", "REST API Design", "Microservices Architecture"] },
+  { id: "react", name: "React", category: "Framework", level: 85, status: "mastered", unlockedBy: ["TypeScript"], unlocks: ["Next.js"] },
+  { id: "docker", name: "Docker", category: "DevOps", level: 30, status: "current", unlockedBy: ["Linux & Bash", "FastAPI"], unlocks: ["Kubernetes", "CI/CD Pipelines", "Microservices Architecture"] },
+  { id: "kubernetes", name: "Kubernetes", category: "DevOps", level: 10, status: "locked", unlockedBy: ["Docker"], unlocks: [] },
+  { id: "cicd", name: "CI/CD Pipelines", category: "DevOps", level: 50, status: "current", unlockedBy: ["Docker", "Git Architecture"], unlocks: [] },
+  { id: "nextjs", name: "Next.js", category: "Framework", level: 72, status: "current", unlockedBy: ["React", "TypeScript", "Tailwind CSS"], unlocks: [] },
+  { id: "ml_foundations", name: "Machine Learning Foundations", category: "AI / ML", level: 35, status: "current", unlockedBy: ["Python"], unlocks: ["LangChain & Agentic AI"] },
+  { id: "prompt_eng", name: "Prompt Engineering & Evals", category: "AI / ML", level: 40, status: "current", unlocks: ["LangChain & Agentic AI"] },
+  { id: "langchain", name: "LangChain & Agentic AI", category: "AI / ML", level: 20, status: "locked", unlockedBy: ["Machine Learning Foundations", "Prompt Engineering & Evals"], unlocks: ["Vector Databases & RAG"] },
+  { id: "vectordb", name: "Vector Databases & RAG", category: "AI / ML", level: 15, status: "locked", unlockedBy: ["LangChain & Agentic AI"], unlocks: [] },
+  { id: "microservices", name: "Microservices Architecture", category: "Architecture", level: 30, status: "locked", unlockedBy: ["FastAPI", "Docker"], unlocks: ["System Design", "Event-Driven Architecture"] },
+  { id: "system_design", name: "System Design", category: "Architecture", level: 45, status: "locked", unlockedBy: ["Microservices Architecture", "Redis & In-Memory Caching"], unlocks: [] },
 ];
 
 export function SkillGraph({ nodes = DEFAULT_NODES, onSelectNode }: SkillGraphProps) {
-  const [selectedNode, setSelectedNode] = useState<SkillNode>(nodes[0]);
+  const activeNodes = nodes && nodes.length > 0 ? nodes : DEFAULT_NODES;
+  const [selectedId, setSelectedId] = useState<string>(activeNodes[0]?.id || "python");
+
+  const selectedNode = activeNodes.find((n) => n.id === selectedId) || activeNodes[0];
 
   const handleSelect = (node: SkillNode) => {
-    setSelectedNode(node);
+    setSelectedId(node.id);
     if (onSelectNode) onSelectNode(node);
   };
+
+  const prereqList = selectedNode?.unlocked_by || selectedNode?.unlockedBy || [];
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -117,11 +132,11 @@ export function SkillGraph({ nodes = DEFAULT_NODES, onSelectNode }: SkillGraphPr
             </div>
           </div>
 
-          {selectedNode.unlockedBy && (
+          {prereqList.length > 0 && (
             <div className="space-y-1.5">
               <span className="font-mono text-[10px] text-neutral-500 uppercase block">PREREQUISITE UPSTREAM</span>
               <div className="flex flex-wrap gap-1.5">
-                {selectedNode.unlockedBy.map((item) => (
+                {prereqList.map((item) => (
                   <Badge key={item} variant="neutral" size="sm">
                     {item}
                   </Badge>

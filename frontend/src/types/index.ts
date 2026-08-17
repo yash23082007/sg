@@ -95,6 +95,10 @@ export interface SkillGapItem {
   priority_score: number;
   /** Categorized readiness level */
   status: GapStatus;
+  /** True if all upstream prerequisites have been cleared */
+  readiness_gate?: boolean;
+  /** List of upstream prerequisite skill names that are unmet */
+  unmet_prerequisites?: string[];
 }
 
 /** Qualitative skill evaluation status */
@@ -114,10 +118,11 @@ export interface DashboardData {
   average_proficiency: number;
   /** High-density list of all evaluated skill nodes */
   skill_gaps: SkillGapItem[];
+  telemetry_source?: string;
 }
 
 // ============================================================================
-// Topological Execution Roadmap
+// Topological Execution Roadmap & Graph Topology
 // ============================================================================
 
 /** Single step in the strictly ordered DAG progression path */
@@ -141,6 +146,40 @@ export interface RoadmapStep {
 
 /** Status of a stage in the execution roadmap */
 export type RoadmapStepStatus = "completed" | "current" | "locked";
+
+/** Full DAG graph node for visual topology */
+export interface SkillGraphNode {
+  id: string;
+  name: string;
+  normalized_key: string;
+  category: string;
+  level: number;
+  required_level: number;
+  status: "mastered" | "current" | "locked";
+  demand_score: number;
+  centrality: number;
+  readiness_gate: boolean;
+  unlocked_by: string[];
+  unlocks: string[];
+  topological_depth: number;
+}
+
+/** Directed prerequisite edge in the DAG */
+export interface SkillGraphEdge {
+  source: string;
+  target: string;
+  source_name: string;
+  target_name: string;
+}
+
+/** Aggregate DAG topology payload */
+export interface SkillGraphData {
+  nodes: SkillGraphNode[];
+  edges: SkillGraphEdge[];
+  total_nodes: number;
+  total_edges: number;
+  telemetry_source?: string;
+}
 
 // ============================================================================
 // Ingestion & HTTP API Payloads

@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api"
     
+    # Environment
+    ENVIRONMENT: str = "development"
+
     # Database
     DATABASE_URL: str = "sqlite:///./skillgap.db"
     
@@ -39,6 +42,17 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
+
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def validate_secret_key_in_production(cls, v: str, info) -> str:
+        """Enforces that a secure key is supplied outside of development."""
+        env = info.data.get("ENVIRONMENT", "development")
+        if env.lower() not in ("development", "dev", "test", "testing") and v == "dev_secret_key_skillgap_matrix_9901_production_ready":
+            raise ValueError(
+                "Default insecure SECRET_KEY cannot be used in production environments! Please provide a secure SECRET_KEY."
+            )
+        return v
 
     @field_validator("WEIGHT_VALUE")
     @classmethod
